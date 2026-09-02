@@ -67,6 +67,8 @@ jobs:
     needs:
       - lint
       - test
+    outputs:
+      image: ${{ steps.set-image.outputs.image }}
 
     steps:
       - name: Checkout code
@@ -91,9 +93,15 @@ jobs:
             .
 
       - name: Push Docker image
+        working-directory: starter/backend
         run: |
           docker push \
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Set image output
+        id: set-image
+        run: |
+          echo "image=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
   deploy:
     runs-on: ubuntu-latest
@@ -110,28 +118,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Configure kubectl
-        env:
-          EKS_CLUSTER_CA: ${{ secrets.EKS_CLUSTER_CA }}
+      - name: Update kubeconfig for EKS
         run: |
-          kubectl config set-cluster cluster \
-            --server=https://DB4ACC87D659446FFD13E806AE7DAD0E.gr7.us-east-1.eks.amazonaws.com \
-            --insecure-skip-tls-verify=true
-
-          TOKEN=$(aws eks get-token \
-            --cluster-name cluster \
-            --region us-east-1 \
-            --query 'status.token' \
-            --output text)
-
-          kubectl config set-credentials github-action-user \
-            --token="$TOKEN"
-
-          kubectl config set-context github-action \
-            --cluster=cluster \
-            --user=github-action-user
-
-          kubectl config use-context github-action
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
       - name: Install Kustomize
         uses: imranismail/setup-kustomize@v2
@@ -139,5 +128,5 @@ jobs:
       - name: Deploy backend
         working-directory: starter/backend/k8s
         run: |
-         kustomize edit set image backend=702043267423.dkr.ecr.us-east-1.amazonaws.com/backend:${{ github.sha }}
-         kustomize build | kubectl apply --validate=false -f -
+          kustomize edit set image backend=${{ needs.build.outputs.image }}
+          kustomize build | kubectl apply --validate=false -f -
