@@ -140,4 +140,4 @@ jobs:
         working-directory: starter/backend/k8s
         run: |
          kustomize edit set image backend=702043267423.dkr.ecr.us-east-1.amazonaws.com/backend:${{ github.sha }}
-         kustomize build --validate=false | kubectl apply -f -
+         kustomize build | kubectl apply --validate=false -f -
